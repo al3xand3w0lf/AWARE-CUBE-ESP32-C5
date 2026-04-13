@@ -11,7 +11,7 @@
 #include "config.h"
 
 WiFiProvisioning provisioning;
-SdCard sdCard;
+SdStorage sdCard;
 
 // Wird aufgerufen wenn Provisioning erfolgreich abgeschlossen ist
 void onProvisioningComplete(String ip) {
@@ -37,16 +37,20 @@ void setup() {
   Serial.println(F("========================================"));
   #endif
 
-  // Provisioning-System starten (initialisiert auch Display + SPI-Bus)
   provisioning.setOnCompleteCallback(onProvisioningComplete);
-  provisioning.begin();
 
-  // SD-Karte auf shared SPI-Bus initialisieren (nach Display-Init)
+  // 1. Display + Boot-Screen (initialisiert auch SPI-Bus fuer SD)
+  provisioning.initDisplay();
+  delay(800);
+
+  // 2. SD-Karte initialisieren und 3s Status anzeigen
   bool sdOk = sdCard.begin();
-  if (sdOk) {
-    sdCard.listRoot();
-  }
-  provisioning.display().showSdStatus(sdOk, sdCard.sizeMB());
+  if (sdOk) sdCard.listRoot();
+  provisioning.display().showSdInit(sdOk, sdCard.sizeMB());
+  delay(3000);
+
+  // 3. WiFi-Provisioning starten (zeigt AP-Screen)
+  provisioning.begin();
 }
 
 void loop() {

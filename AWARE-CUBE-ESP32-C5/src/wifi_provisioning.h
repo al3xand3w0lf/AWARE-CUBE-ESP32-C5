@@ -32,6 +32,7 @@ class WiFiProvisioning {
 public:
   WiFiProvisioning();
 
+  void initDisplay();   // Display + Boot-Screen (fuer frueh-Init vor SD-Karte)
   void begin();
   void loop();
   bool isProvisioned();
@@ -85,6 +86,8 @@ private:
 
   // Callback
   std::function<void(String ip)> _onComplete;
+
+  bool _displayInited = false;
 
   // Interne Methoden
   void _changeState(ProvisioningState newState);

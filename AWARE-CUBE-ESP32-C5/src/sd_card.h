@@ -8,7 +8,7 @@
 #include <Arduino.h>
 #include <SdFat.h>
 
-class SdCard {
+class SdStorage {
 public:
   bool begin();               // true wenn Karte initialisiert
   void listRoot();            // Root-Verzeichnis auf Serial ausgeben

@@ -37,8 +37,8 @@ public:
   void showReconnecting(int attempt, int maxAttempts);
   void showFactoryReset();
 
-  // SD-Karten-Status: ueberlagert eine Statuszeile am unteren Display-Rand
-  void showSdStatus(bool ok, float sizeMB);
+  // Vollbild-Screen fuer SD-Init (wird fuer ~3s zwischen Boot und WiFi-Setup gezeigt)
+  void showSdInit(bool ok, float sizeMB);
 
 private:
   Adafruit_ST7789 _tft;

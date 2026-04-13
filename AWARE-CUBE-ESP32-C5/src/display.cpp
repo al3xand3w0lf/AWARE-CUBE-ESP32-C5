@@ -184,24 +184,22 @@ void Display::showFactoryReset() {
   _drawCentered("Neustart...", 160, COL_DIMMED, 2);
 }
 
-void Display::showSdStatus(bool ok, float sizeMB) {
-  // Statuszeile unten (y=232..239) ueberschreiben
-  _tft.fillRect(0, 232, 240, 8, COL_BG);
-  _tft.setTextSize(1);
-  _tft.setCursor(4, 232);
+void Display::showSdInit(bool ok, float sizeMB) {
+  _clear();
+  _drawCentered("SD Karte", 60, COL_ACCENT, 3);
 
   if (ok) {
-    _tft.setTextColor(COL_SUCCESS);
-    _tft.print("SD:OK ");
-    _tft.setTextColor(COL_TEXT);
+    _drawCentered("OK", 110, COL_SUCCESS, 4);
+    char buf[24];
     if (sizeMB >= 1024.0f) {
-      _tft.printf("%.1f GB", sizeMB / 1024.0f);
+      snprintf(buf, sizeof(buf), "%.1f GB", sizeMB / 1024.0f);
     } else {
-      _tft.printf("%.0f MB", sizeMB);
+      snprintf(buf, sizeof(buf), "%.0f MB", sizeMB);
     }
+    _drawCentered(buf, 165, COL_TEXT, 2);
   } else {
-    _tft.setTextColor(COL_ERROR);
-    _tft.print("SD: keine Karte");
+    _drawCentered("Keine Karte", 120, COL_ERROR, 2);
+    _drawCentered("erkannt", 150, COL_ERROR, 2);
   }
 }
 

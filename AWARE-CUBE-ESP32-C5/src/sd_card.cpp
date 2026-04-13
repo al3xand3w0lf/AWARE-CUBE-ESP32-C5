@@ -7,7 +7,7 @@
 #include "config.h"
 #include <SPI.h>
 
-bool SdCard::begin() {
+bool SdStorage::begin() {
   DBG_PRINTLN(F("[SD] Initialisiere SD-Karte (shared SPI)..."));
 
   SdSpiConfig cfg(SD_CS_PIN, SHARED_SPI, SD_SCK_MHZ(SD_SPI_MHZ), &SPI);
@@ -22,12 +22,12 @@ bool SdCard::begin() {
   return true;
 }
 
-float SdCard::sizeMB() {
+float SdStorage::sizeMB() {
   if (!_ready) return 0.0f;
   return _sd.vol()->sectorsPerCluster() * _sd.vol()->clusterCount() / 2048.0f;
 }
 
-void SdCard::listRoot() {
+void SdStorage::listRoot() {
   if (!_ready) {
     DBG_PRINTLN(F("[SD] Nicht bereit"));
     return;

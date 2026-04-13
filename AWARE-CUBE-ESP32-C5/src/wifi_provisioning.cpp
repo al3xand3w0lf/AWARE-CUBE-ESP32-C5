@@ -33,12 +33,18 @@ WiFiProvisioning::WiFiProvisioning()
 // Öffentliche API
 // ============================================================
 
+void WiFiProvisioning::initDisplay() {
+  if (_displayInited) return;
+  _display.begin();
+  _display.showBoot();
+  _displayInited = true;
+}
+
 void WiFiProvisioning::begin() {
   DBG_PRINTLN(F("[Prov] Begin"));
 
-  // Display initialisieren
-  _display.begin();
-  _display.showBoot();
+  // Display initialisieren (falls nicht schon von main extern gemacht)
+  initDisplay();
 
   // Reset-Pin konfigurieren
   pinMode(RESET_PIN, INPUT_PULLUP);
@@ -51,8 +57,6 @@ void WiFiProvisioning::begin() {
   };
   esp_task_wdt_reconfigure(&wdtConfig);
   esp_task_wdt_add(NULL);
-
-  delay(500);  // Boot-Screen kurz anzeigen
 
   _changeState(ProvisioningState::CHECK_NVS);
 }
