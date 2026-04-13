@@ -135,6 +135,20 @@ void WiFiProvisioning::_handleStateCheckNvs() {
 void WiFiProvisioning::_handleStateProvisioningMode() {
   _dns.processNextRequest();
   _server.handleClient();
+
+  // Bei Client-Connect/Disconnect: Screen zwischen WiFi-QR und URL-QR umschalten
+  int stations = WiFi.softAPgetStationNum();
+  if (stations != _lastStationCount) {
+    _lastStationCount = stations;
+    if (stations > 0) {
+      String url = String("http://") + WiFi.softAPIP().toString();
+      DBG_PRINTF("[Prov] Client verbunden (%d) — zeige URL-QR: %s\n", stations, url.c_str());
+      _display.showProvisioningUrl(url);
+    } else {
+      DBG_PRINTLN(F("[Prov] Kein Client — zeige WiFi-QR"));
+      _display.showProvisioningAP(_apSsid, AP_PASSWORD);
+    }
+  }
 }
 
 void WiFiProvisioning::_handleStateConnectingNew() {
@@ -266,6 +280,7 @@ void WiFiProvisioning::_startProvisioningMode() {
 
   // Display: Zeige Anweisungen für den User
   _display.showProvisioningAP(_apSsid, AP_PASSWORD);
+  _lastStationCount = 0;
 
   DBG_PRINTF("[Prov] AP aktiv. IP: %s\n", WiFi.softAPIP().toString().c_str());
 }

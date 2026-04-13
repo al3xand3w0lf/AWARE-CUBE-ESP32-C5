@@ -31,6 +31,7 @@ public:
   // Provisioning-Bildschirme
   void showBoot();
   void showProvisioningAP(const String& apName, const String& password);
+  void showProvisioningUrl(const String& url);  // Nach WLAN-Connect: QR mit Portal-URL
   void showConnecting(const String& ssid);
   void showConnected(const String& ssid, const String& ip);
   void showConnectionFailed(const String& reason);

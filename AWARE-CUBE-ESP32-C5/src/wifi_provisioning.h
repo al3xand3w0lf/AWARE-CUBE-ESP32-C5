@@ -88,6 +88,7 @@ private:
   std::function<void(String ip)> _onComplete;
 
   bool _displayInited = false;
+  int  _lastStationCount = -1;  // fuer Umschaltung WiFi-QR <-> URL-QR
 
   // Interne Methoden
   void _changeState(ProvisioningState newState);

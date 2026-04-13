@@ -6,6 +6,7 @@
  */
 
 #include "display.h"
+#include <qrcode.h>
 
 Display::Display()
     : _tft(TFT_CS, TFT_DC, TFT_RST) {}
@@ -40,66 +41,67 @@ void Display::showProvisioningAP(const String& apName, const String& password) {
   _clear();
 
   // Titel
-  _drawCentered("WiFi Setup", 8, COL_ACCENT, 2);
+  _drawCentered("WiFi Setup", 4, COL_ACCENT, 2);
 
-  // Trennlinie
-  _tft.drawFastHLine(20, 30, 200, COL_DIMMED);
+  // QR-Code: WiFi-Payload, Smartphone-Kamera verbindet direkt und
+  // Captive Portal oeffnet sich danach automatisch.
+  String payload = "WIFI:T:WPA;S:" + apName + ";P:" + password + ";;";
 
-  // Schritt 1
-  _tft.setTextColor(COL_WARN);
-  _tft.setTextSize(1);
-  _tft.setCursor(10, 42);
-  _tft.print("1. WLAN verbinden:");
+  const uint8_t qrVersion = 4;                 // 33x33 Module, reicht fuer ca. 78 Bytes @ ECC_LOW
+  QRCode qr;
+  uint8_t qrData[qrcode_getBufferSize(qrVersion)];
+  qrcode_initText(&qr, qrData, qrVersion, ECC_LOW, payload.c_str());
 
-  _tft.setTextColor(COL_TITLE);
-  _tft.setTextSize(2);
-  _tft.setCursor(10, 58);
-  _tft.print(apName);
+  const int modules  = qr.size;                 // 33
+  const int pxPer    = 6;                       // 33*6 = 198 px
+  const int qrPx     = modules * pxPer;
+  const int qrX      = (240 - qrPx) / 2;        // zentriert
+  const int qrY      = 26;
 
-  // Passwort
-  _tft.setTextColor(COL_WARN);
-  _tft.setTextSize(1);
-  _tft.setCursor(10, 84);
-  _tft.print("Passwort:");
+  // Weisser Hintergrund als Quiet-Zone
+  _tft.fillRect(qrX - pxPer, qrY - pxPer,
+                qrPx + 2 * pxPer, qrPx + 2 * pxPer, ST77XX_WHITE);
 
-  _tft.setTextColor(COL_TITLE);
-  _tft.setTextSize(2);
-  _tft.setCursor(10, 100);
-  _tft.print(password);
+  for (int y = 0; y < modules; y++) {
+    for (int x = 0; x < modules; x++) {
+      if (qrcode_getModule(&qr, x, y)) {
+        _tft.fillRect(qrX + x * pxPer, qrY + y * pxPer, pxPer, pxPer, ST77XX_BLACK);
+      }
+    }
+  }
 
-  // Trennlinie
-  _tft.drawFastHLine(20, 124, 200, COL_DIMMED);
+  // Hinweistext unter dem QR-Code
+  _drawCentered("Kamera auf QR halten", 230, COL_DIMMED, 1);
+}
 
-  // Schritt 2
-  _tft.setTextColor(COL_WARN);
-  _tft.setTextSize(1);
-  _tft.setCursor(10, 136);
-  _tft.print("2. Browser oeffnen:");
+void Display::showProvisioningUrl(const String& url) {
+  _clear();
+  _drawCentered("Verbunden!", 4, COL_SUCCESS, 2);
 
-  _tft.setTextColor(COL_ACCENT);
-  _tft.setTextSize(2);
-  _tft.setCursor(10, 152);
-  _tft.print("192.168.4.1");
+  const uint8_t qrVersion = 3;                 // 29x29 reicht fuer kurze URL
+  QRCode qr;
+  uint8_t qrData[qrcode_getBufferSize(qrVersion)];
+  qrcode_initText(&qr, qrData, qrVersion, ECC_LOW, url.c_str());
 
-  // Trennlinie
-  _tft.drawFastHLine(20, 178, 200, COL_DIMMED);
+  const int modules = qr.size;
+  const int pxPer   = 6;                        // 29*6 = 174 px
+  const int qrPx    = modules * pxPer;
+  const int qrX     = (240 - qrPx) / 2;
+  const int qrY     = 26;
 
-  // Schritt 3
-  _tft.setTextColor(COL_WARN);
-  _tft.setTextSize(1);
-  _tft.setCursor(10, 190);
-  _tft.print("3. Netzwerk scannen");
+  _tft.fillRect(qrX - pxPer, qrY - pxPer,
+                qrPx + 2 * pxPer, qrPx + 2 * pxPer, ST77XX_WHITE);
 
-  _tft.setTextColor(COL_TEXT);
-  _tft.setTextSize(1);
-  _tft.setCursor(10, 206);
-  _tft.print("   und WLAN auswaehlen");
+  for (int y = 0; y < modules; y++) {
+    for (int x = 0; x < modules; x++) {
+      if (qrcode_getModule(&qr, x, y)) {
+        _tft.fillRect(qrX + x * pxPer, qrY + y * pxPer, pxPer, pxPer, ST77XX_BLACK);
+      }
+    }
+  }
 
-  // Unten: Geräte-Name
-  _tft.setTextColor(COL_DIMMED);
-  _tft.setTextSize(1);
-  _tft.setCursor(10, 228);
-  _tft.print(DEVICE_NAME);
+  _drawCentered("Scannen oder im Browser:", 212, COL_DIMMED, 1);
+  _drawCentered(url.c_str(), 226, COL_ACCENT, 1);
 }
 
 void Display::showConnecting(const String& ssid) {
