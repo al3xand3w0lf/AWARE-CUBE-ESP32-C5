@@ -40,25 +40,23 @@ void Display::showBoot() {
 void Display::showProvisioningAP(const String& apName, const String& password) {
   _clear();
 
-  // Titel
-  _drawCentered("WiFi Setup", 4, COL_ACCENT, 2);
+  _drawCentered("Connect to WiFi", 2, COL_ACCENT, 2);
+  _drawCentered("Point your camera", 26, COL_TEXT, 2);
+  _drawCentered("at the code", 46, COL_TEXT, 2);
 
-  // QR-Code: WiFi-Payload, Smartphone-Kamera verbindet direkt und
-  // Captive Portal oeffnet sich danach automatisch.
   String payload = "WIFI:T:WPA;S:" + apName + ";P:" + password + ";;";
 
-  const uint8_t qrVersion = 4;                 // 33x33 Module, reicht fuer ca. 78 Bytes @ ECC_LOW
+  const uint8_t qrVersion = 4;                 // 33x33 Module
   QRCode qr;
   uint8_t qrData[qrcode_getBufferSize(qrVersion)];
   qrcode_initText(&qr, qrData, qrVersion, ECC_LOW, payload.c_str());
 
   const int modules  = qr.size;                 // 33
-  const int pxPer    = 6;                       // 33*6 = 198 px
+  const int pxPer    = 5;                       // 33*5 = 165 px (~20% kleiner)
   const int qrPx     = modules * pxPer;
-  const int qrX      = (240 - qrPx) / 2;        // zentriert
-  const int qrY      = 26;
+  const int qrX      = (240 - qrPx) / 2;
+  const int qrY      = 68;
 
-  // Weisser Hintergrund als Quiet-Zone
   _tft.fillRect(qrX - pxPer, qrY - pxPer,
                 qrPx + 2 * pxPer, qrPx + 2 * pxPer, ST77XX_WHITE);
 
@@ -69,25 +67,25 @@ void Display::showProvisioningAP(const String& apName, const String& password) {
       }
     }
   }
-
-  // Hinweistext unter dem QR-Code
-  _drawCentered("Kamera auf QR halten", 230, COL_DIMMED, 1);
 }
 
 void Display::showProvisioningUrl(const String& url) {
   _clear();
-  _drawCentered("Verbunden!", 4, COL_SUCCESS, 2);
+
+  _drawCentered("Almost done", 2, COL_SUCCESS, 2);
+  _drawCentered("Scan again to pick", 26, COL_TEXT, 2);
+  _drawCentered("your home WiFi", 46, COL_TEXT, 2);
 
   const uint8_t qrVersion = 3;                 // 29x29 reicht fuer kurze URL
   QRCode qr;
   uint8_t qrData[qrcode_getBufferSize(qrVersion)];
   qrcode_initText(&qr, qrData, qrVersion, ECC_LOW, url.c_str());
 
-  const int modules = qr.size;
-  const int pxPer   = 6;                        // 29*6 = 174 px
+  const int modules = qr.size;                  // 29
+  const int pxPer   = 5;                        // 29*5 = 145 px
   const int qrPx    = modules * pxPer;
   const int qrX     = (240 - qrPx) / 2;
-  const int qrY     = 26;
+  const int qrY     = 78;
 
   _tft.fillRect(qrX - pxPer, qrY - pxPer,
                 qrPx + 2 * pxPer, qrPx + 2 * pxPer, ST77XX_WHITE);
@@ -99,9 +97,6 @@ void Display::showProvisioningUrl(const String& url) {
       }
     }
   }
-
-  _drawCentered("Scannen oder im Browser:", 212, COL_DIMMED, 1);
-  _drawCentered(url.c_str(), 226, COL_ACCENT, 1);
 }
 
 void Display::showConnecting(const String& ssid) {
