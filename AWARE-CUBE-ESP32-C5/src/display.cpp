@@ -99,6 +99,25 @@ void Display::showProvisioningUrl(const String& url) {
   }
 }
 
+void Display::showTransitionLookAtDevice() {
+  _clear();
+  _drawCentered("Connected!", 50, COL_SUCCESS, 3);
+  _drawCentered("Press button", 120, COL_ACCENT, 2);
+  _drawCentered("for next step", 148, COL_ACCENT, 2);
+}
+
+void Display::pulseBacklight(int pulses) {
+  // Heller Blitz -> zurueck zur Normalhelligkeit, wiederholt.
+  // Blockierend (~pulses * 300ms). OK bei einmaligem Uebergang,
+  // Watchdog-Timeout 30s ist grosszuegig.
+  for (int i = 0; i < pulses; i++) {
+    ledcWrite(TFT_BL, 255);
+    delay(150);
+    ledcWrite(TFT_BL, TFT_BL_BRIGHTNESS);
+    delay(150);
+  }
+}
+
 void Display::showConnecting(const String& ssid) {
   _clear();
   _drawCentered("Verbinde...", 60, COL_WARN, 2);

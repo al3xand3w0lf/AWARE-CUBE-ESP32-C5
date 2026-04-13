@@ -10,6 +10,11 @@
 #include "wifi_provisioning.h"
 #include "html_content.h"
 #include <esp_task_wdt.h>
+#include <esp_netif.h>
+
+// RFC 8910: URI fuer DHCP Option 114 (Captive-Portal). Muss fuer die gesamte
+// Laufzeit des DHCP-Servers gueltig bleiben, daher statisch.
+static const char CAPTIVE_PORTAL_URI[] = "http://192.168.4.1/";
 
 static const uint16_t DNS_PORT = 53;
 
@@ -148,11 +153,14 @@ void WiFiProvisioning::_handleStateProvisioningMode() {
   if (stations != _lastStationCount) {
     _lastStationCount = stations;
     if (stations > 0) {
-      String url = String("http://") + WiFi.softAPIP().toString();
-      DBG_PRINTF("[Prov] Client verbunden (%d) — zeige URL-QR: %s\n", stations, url.c_str());
-      _display.showProvisioningUrl(url);
+      DBG_PRINTF("[Prov] Client verbunden (%d) — Transition-Screen, warte auf Tastendruck\n", stations);
+      _display.showTransitionLookAtDevice();
+      _display.pulseBacklight(3);              // Attention-Grab
+      esp_task_wdt_reset();
+      _awaitingButtonForQr2 = true;
     } else {
       DBG_PRINTLN(F("[Prov] Kein Client — zeige WiFi-QR"));
+      _awaitingButtonForQr2 = false;
       _display.showProvisioningAP(_apSsid, AP_PASSWORD);
     }
   }
@@ -278,7 +286,23 @@ void WiFiProvisioning::_startProvisioningMode() {
   WiFi.softAPConfig(AP_IP, AP_GATEWAY, AP_SUBNET);
   WiFi.softAP(_apSsid.c_str(), AP_PASSWORD, AP_CHANNEL, false, AP_MAX_CLIENTS);
 
-  // DNS-Server — Captive Portal
+  // RFC 8910: DHCP Option 114 signalisiert die Captive-Portal-URI.
+  // Moderne OS (Android 14+, iOS 14+, Win 11) zeigen dann zuverlaessiger
+  // das Auto-Popup, weil die Info authentifiziert ueber DHCP kommt.
+  esp_netif_t* apNetif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+  if (apNetif) {
+    esp_netif_dhcps_stop(apNetif);
+    esp_err_t err = esp_netif_dhcps_option(apNetif, ESP_NETIF_OP_SET,
+                                           ESP_NETIF_CAPTIVEPORTAL_URI,
+                                           (void*)CAPTIVE_PORTAL_URI,
+                                           sizeof(CAPTIVE_PORTAL_URI) - 1);
+    esp_netif_dhcps_start(apNetif);
+    DBG_PRINTF("[Prov] DHCP Option 114 set: %s (err=%d)\n", CAPTIVE_PORTAL_URI, err);
+  } else {
+    DBG_PRINTLN(F("[Prov] WARN: AP netif nicht gefunden, kein DHCP Opt 114"));
+  }
+
+  // DNS-Server — Captive Portal (Fallback fuer Geraete ohne RFC-8910-Support)
   _dns.start(DNS_PORT, "*", AP_IP);
 
   // WebServer
@@ -300,6 +324,10 @@ void WiFiProvisioning::_stopProvisioningMode() {
 }
 
 void WiFiProvisioning::_setupWebServerRoutes() {
+  // User-Agent fuer Captive-Portal-Diagnose mitschneiden
+  const char* wantedHeaders[] = {"User-Agent"};
+  _server.collectHeaders(wantedHeaders, 1);
+
   // --- Captive Portal Detection ---
   // Android
   _server.on("/generate_204", HTTP_GET, [this]() { handleGenerate204(); });
@@ -383,36 +411,70 @@ void WiFiProvisioning::_changeState(ProvisioningState newState) {
 // - Release < BUTTON_SHORT_MAX_MS      -> Kurzdruck
 // - Halten  >= BUTTON_LONG_HOLD_MS     -> Factory-Reset (sofort, ohne Release)
 void WiFiProvisioning::_handleButton() {
+  // ISR auf RISING -> sofort aktivieren (digitalRead wegen Bouncing nicht zuverlaessig).
   if (_buttonEvent) {
     _buttonEvent = false;
-    if (!_buttonActive && digitalRead(BUTTON_PIN) == HIGH) {
+    if (!_buttonActive) {
       _buttonActive = true;
       _buttonPressedAt = millis();
+      _releaseCandidateAt = 0;
+      DBG_PRINTLN(F("[Btn] ISR -> aktiv"));
     }
   }
 
   if (!_buttonActive) return;
 
-  bool pressed = (digitalRead(BUTTON_PIN) == HIGH);
-  unsigned long held = millis() - _buttonPressedAt;
+  unsigned long now = millis();
+  unsigned long held = now - _buttonPressedAt;
+  bool pinHigh = (digitalRead(BUTTON_PIN) == HIGH);
 
-  if (pressed && held >= BUTTON_LONG_HOLD_MS) {
+  // Press-Debounce: in den ersten BUTTON_DEBOUNCE_MS nach der ISR nichts auswerten.
+  if (held < BUTTON_DEBOUNCE_MS) return;
+
+  // Langdruck -> Factory Reset (sofort, ohne auf Release zu warten).
+  if (pinHigh && held >= BUTTON_LONG_HOLD_MS) {
     _buttonActive = false;
     resetCredentials();
     return;
   }
 
-  if (!pressed) {
-    _buttonActive = false;
-    if (held <= BUTTON_SHORT_MAX_MS) {
-      _onShortPress();
-    }
+  // Noch gedrueckt -> weiter warten; Release-Kandidat verwerfen.
+  if (pinHigh) {
+    _releaseCandidateAt = 0;
+    return;
+  }
+
+  // Pin LOW -> moeglicher Release. Release-Debounce: Pin muss BUTTON_DEBOUNCE_MS
+  // stabil LOW bleiben, damit ein einzelnes Bouncing-LOW nicht als Release zaehlt.
+  if (_releaseCandidateAt == 0) {
+    _releaseCandidateAt = now;
+    return;
+  }
+  if (now - _releaseCandidateAt < BUTTON_DEBOUNCE_MS) return;
+
+  // Release bestaetigt.
+  unsigned long finalHeld = _releaseCandidateAt - _buttonPressedAt;
+  _buttonActive = false;
+  _releaseCandidateAt = 0;
+  DBG_PRINTF("[Btn] Release nach %lu ms\n", finalHeld);
+  if (finalHeld <= BUTTON_SHORT_MAX_MS) {
+    _onShortPress();
   }
 }
 
 void WiFiProvisioning::_onShortPress() {
   DBG_PRINTLN(F("[Btn] Kurzdruck"));
-  // TODO: Bildschirm weiterschalten (naechster Info-Screen)
+
+  // Im Provisioning-Flow: Transition-Screen -> QR2 weiterschalten
+  if (_awaitingButtonForQr2) {
+    _awaitingButtonForQr2 = false;
+    String url = String("http://") + WiFi.softAPIP().toString();
+    DBG_PRINTF("[Btn] -> zeige URL-QR: %s\n", url.c_str());
+    _display.showProvisioningUrl(url);
+    return;
+  }
+
+  // TODO: Bildschirm weiterschalten (naechster Info-Screen im Normalbetrieb)
 }
 
 String WiFiProvisioning::_generateApSsid() {

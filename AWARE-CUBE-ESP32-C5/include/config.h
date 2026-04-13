@@ -30,6 +30,7 @@
 #define BUTTON_PIN         24                 // GPIO, Button gegen 3.3V
 #define BUTTON_SHORT_MAX_MS  1000             // bis 1s = Kurzdruck
 #define BUTTON_LONG_HOLD_MS 10000             // ab 10s = Factory-Reset
+#define BUTTON_DEBOUNCE_MS    50              // Entprell-Fenster (Press & Release)
 
 // --- NVS ---
 #define NVS_NAMESPACE     "wifi"              // NVS-Namespace für Credentials

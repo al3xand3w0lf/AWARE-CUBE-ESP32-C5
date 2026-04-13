@@ -47,7 +47,7 @@ void setup() {
   bool sdOk = sdCard.begin();
   if (sdOk) sdCard.listRoot();
   provisioning.display().showSdInit(sdOk, sdCard.sizeMB());
-  delay(1000);
+  delay(100);
 
   // 3. WiFi-Provisioning starten (zeigt AP-Screen)
   provisioning.begin();

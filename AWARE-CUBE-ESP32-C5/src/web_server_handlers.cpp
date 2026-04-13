@@ -11,6 +11,12 @@
 #include "html_content.h"
 #include <esp_task_wdt.h>
 
+// Diagnose-Helfer: loggt jede Captive-Portal-Probe inkl. User-Agent
+#define LOG_PROBE(tag) \
+  DBG_PRINTF("[HTTP] " tag " uri=%s ua=\"%s\"\n", \
+             _server.uri().c_str(), \
+             _server.hasHeader("User-Agent") ? _server.header("User-Agent").c_str() : "?")
+
 // Kleine Redirect-Seite als Fallback (Meta-Refresh + JS)
 static const char REDIRECT_HTML[] PROGMEM = R"(
 <!DOCTYPE html><html><head>
@@ -24,38 +30,32 @@ static const char REDIRECT_HTML[] PROGMEM = R"(
 // ============================================================
 
 void WiFiProvisioning::handleGenerate204() {
-  // Android: /generate_204 — ein Nicht-204-Antwort triggert das Portal-Popup
-  DBG_PRINTLN(F("[HTTP] /generate_204 -> Redirect"));
+  LOG_PROBE("Android(generate_204)");
   _server.sendHeader("Location", "http://192.168.4.1/");
   _server.send(302, "text/html", FPSTR(REDIRECT_HTML));
 }
 
 void WiFiProvisioning::handleHotspotDetect() {
-  // Apple/Firefox: Antwort die NICHT "Success" enthält -> Portal-Popup öffnet sich
-  DBG_PRINTLN(F("[HTTP] Hotspot-Detect -> Portal-Seite"));
-  // Direkt die Portal-Seite liefern (kein Redirect nötig)
+  LOG_PROBE("Apple/Firefox(hotspot)");
   String html = FPSTR(HTML_PAGE);
   html.replace("%DEVICE_NAME%", DEVICE_NAME);
   _server.send(200, "text/html", html);
 }
 
 void WiFiProvisioning::handleConnectTest() {
-  // Windows: /connecttest.txt — Antwort die NICHT "Microsoft Connect Test" ist
-  DBG_PRINTLN(F("[HTTP] /connecttest.txt -> Redirect"));
+  LOG_PROBE("Windows(connecttest)");
   _server.sendHeader("Location", "http://192.168.4.1/");
   _server.send(302, "text/html", FPSTR(REDIRECT_HTML));
 }
 
 void WiFiProvisioning::handleNcsiTxt() {
-  // Windows NCSI: /ncsi.txt
-  DBG_PRINTLN(F("[HTTP] /ncsi.txt -> Redirect"));
+  LOG_PROBE("Windows(ncsi)");
   _server.sendHeader("Location", "http://192.168.4.1/");
   _server.send(302, "text/html", FPSTR(REDIRECT_HTML));
 }
 
 void WiFiProvisioning::handleNotFound() {
-  // Alle unbekannten Pfade -> Redirect auf Hauptseite
-  DBG_PRINTF("[HTTP] %s -> Redirect\n", _server.uri().c_str());
+  LOG_PROBE("NotFound");
   _server.sendHeader("Location", "http://192.168.4.1/");
   _server.send(302, "text/html", FPSTR(REDIRECT_HTML));
 }

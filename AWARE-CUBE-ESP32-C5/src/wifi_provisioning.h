@@ -81,6 +81,7 @@ private:
   static void IRAM_ATTR _buttonIsr();
   static volatile bool _buttonEvent;
   unsigned long _buttonPressedAt;
+  unsigned long _releaseCandidateAt = 0;  // Zeitpunkt ersten LOW-Reads fuer Debounce
   bool _buttonActive;
   void _handleButton();
   void _onShortPress();
@@ -93,6 +94,7 @@ private:
 
   bool _displayInited = false;
   int  _lastStationCount = -1;  // fuer Umschaltung WiFi-QR <-> URL-QR
+  bool _awaitingButtonForQr2 = false;  // Transition-Screen wartet auf Tastendruck
 
   // Interne Methoden
   void _changeState(ProvisioningState newState);

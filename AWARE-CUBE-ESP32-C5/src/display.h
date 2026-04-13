@@ -32,6 +32,8 @@ public:
   void showBoot();
   void showProvisioningAP(const String& apName, const String& password);
   void showProvisioningUrl(const String& url);  // Nach WLAN-Connect: QR mit Portal-URL
+  void showTransitionLookAtDevice();            // Uebergangs-Screen zwischen QR1 und QR2
+  void pulseBacklight(int pulses = 3);          // Hintergrundbeleuchtung blinken (Attention)
   void showConnecting(const String& ssid);
   void showConnected(const String& ssid, const String& ip);
   void showConnectionFailed(const String& reason);
