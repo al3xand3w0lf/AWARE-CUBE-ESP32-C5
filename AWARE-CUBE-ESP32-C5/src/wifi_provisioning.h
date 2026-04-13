@@ -77,9 +77,13 @@ private:
   int _reconnectAttempts;
   unsigned long _lastReconnectAt;
 
-  // Reset-Button
-  unsigned long _resetPressedAt;
-  bool _resetActive;
+  // Button (Interrupt-gesteuert, Polling-Pfad nur bei aktivem Druck)
+  static void IRAM_ATTR _buttonIsr();
+  static volatile bool _buttonEvent;
+  unsigned long _buttonPressedAt;
+  bool _buttonActive;
+  void _handleButton();
+  void _onShortPress();
 
   // AP-Name (gespeichert für Display)
   String _apSsid;
@@ -95,7 +99,6 @@ private:
   void _startProvisioningMode();
   void _stopProvisioningMode();
   void _setupWebServerRoutes();
-  void _checkResetButton();
   bool _loadCredentials();
   void _saveCredentials(const String& ssid, const String& pass);
   void _clearCredentials();

@@ -25,9 +25,11 @@
 #define SAVED_CONNECT_TIMEOUT_MS 30000        // Timeout für gespeicherte Credentials
 #define AP_SHUTDOWN_DELAY_MS    3000          // Verzögerung bevor AP abgeschaltet wird
 
-// --- Reset-Button ---
-#define RESET_PIN         9                   // GPIO für Factory-Reset
-#define RESET_HOLD_TIME_MS 5000               // Haltezeit für Reset (5 Sekunden)
+// --- Button (GPIO24, aktiv HIGH, interner Pull-Down) ---
+// Kurzdruck: naechster Info-Screen (TODO). Langdruck: Factory-Reset.
+#define BUTTON_PIN         24                 // GPIO, Button gegen 3.3V
+#define BUTTON_SHORT_MAX_MS  1000             // bis 1s = Kurzdruck
+#define BUTTON_LONG_HOLD_MS 10000             // ab 10s = Factory-Reset
 
 // --- NVS ---
 #define NVS_NAMESPACE     "wifi"              // NVS-Namespace für Credentials

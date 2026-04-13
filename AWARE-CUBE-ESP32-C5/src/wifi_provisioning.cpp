@@ -13,6 +13,12 @@
 
 static const uint16_t DNS_PORT = 53;
 
+volatile bool WiFiProvisioning::_buttonEvent = false;
+
+void IRAM_ATTR WiFiProvisioning::_buttonIsr() {
+  _buttonEvent = true;
+}
+
 // ============================================================
 // Konstruktor
 // ============================================================
@@ -25,8 +31,8 @@ WiFiProvisioning::WiFiProvisioning()
       _connectDone(false),
       _reconnectAttempts(0),
       _lastReconnectAt(0),
-      _resetPressedAt(0),
-      _resetActive(false),
+      _buttonPressedAt(0),
+      _buttonActive(false),
       _onComplete(nullptr) {}
 
 // ============================================================
@@ -46,8 +52,9 @@ void WiFiProvisioning::begin() {
   // Display initialisieren (falls nicht schon von main extern gemacht)
   initDisplay();
 
-  // Reset-Pin konfigurieren
-  pinMode(RESET_PIN, INPUT_PULLUP);
+  // Button: aktiv HIGH, interner Pull-Down, Interrupt auf steigende Flanke
+  pinMode(BUTTON_PIN, INPUT_PULLDOWN);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), _buttonIsr, RISING);
 
   // Watchdog aktivieren
   esp_task_wdt_config_t wdtConfig = {
@@ -63,7 +70,7 @@ void WiFiProvisioning::begin() {
 
 void WiFiProvisioning::loop() {
   esp_task_wdt_reset();
-  _checkResetButton();
+  _handleButton();
 
   switch (_state) {
     case ProvisioningState::BOOT:
@@ -371,19 +378,41 @@ void WiFiProvisioning::_changeState(ProvisioningState newState) {
   #endif
 }
 
-void WiFiProvisioning::_checkResetButton() {
-  bool pressed = (digitalRead(RESET_PIN) == LOW);
-
-  if (pressed && !_resetActive) {
-    _resetActive = true;
-    _resetPressedAt = millis();
-  } else if (pressed && _resetActive) {
-    if (millis() - _resetPressedAt >= RESET_HOLD_TIME_MS) {
-      resetCredentials();
+// ISR setzt nur _buttonEvent. Ab hier laeuft die Auswertung im loop():
+// - Einstieg durch ISR-Flag ODER wenn Button noch gedrueckt ist (Nachverfolgung).
+// - Release < BUTTON_SHORT_MAX_MS      -> Kurzdruck
+// - Halten  >= BUTTON_LONG_HOLD_MS     -> Factory-Reset (sofort, ohne Release)
+void WiFiProvisioning::_handleButton() {
+  if (_buttonEvent) {
+    _buttonEvent = false;
+    if (!_buttonActive && digitalRead(BUTTON_PIN) == HIGH) {
+      _buttonActive = true;
+      _buttonPressedAt = millis();
     }
-  } else if (!pressed && _resetActive) {
-    _resetActive = false;
   }
+
+  if (!_buttonActive) return;
+
+  bool pressed = (digitalRead(BUTTON_PIN) == HIGH);
+  unsigned long held = millis() - _buttonPressedAt;
+
+  if (pressed && held >= BUTTON_LONG_HOLD_MS) {
+    _buttonActive = false;
+    resetCredentials();
+    return;
+  }
+
+  if (!pressed) {
+    _buttonActive = false;
+    if (held <= BUTTON_SHORT_MAX_MS) {
+      _onShortPress();
+    }
+  }
+}
+
+void WiFiProvisioning::_onShortPress() {
+  DBG_PRINTLN(F("[Btn] Kurzdruck"));
+  // TODO: Bildschirm weiterschalten (naechster Info-Screen)
 }
 
 String WiFiProvisioning::_generateApSsid() {
