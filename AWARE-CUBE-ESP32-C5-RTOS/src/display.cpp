@@ -1,10 +1,15 @@
-// display.cpp — ST7789 240x240. Rendering portiert aus legacy src/display.cpp.
-// Task dispatcht AppState-Changes aus g_displayQueue an die passenden show*.
+// display.cpp — ST7789 240x240. Boot-Splash (Logos) + state-driven Screens.
 
 #include "display.h"
 #include "config.h"
 #include "wifi_prov.h"
 #include "sd_storage.h"
+#include "gnss.h"
+#include "ntrip.h"
+
+#include "wolf_logo.h"
+#include "space_geodesy_logo.h"
+#include "eth_spacegeodesy_logo.h"
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
@@ -33,7 +38,7 @@ static void drawCentered(const char* text, int y, uint16_t color, uint8_t size) 
 
 static void drawQr(const char* payload, uint8_t version, int pxPer, int y) {
   QRCode qr;
-  uint8_t buf[qrcode_getBufferSize(16)];          // genug fuer bis Version 16
+  uint8_t buf[qrcode_getBufferSize(16)];
   qrcode_initText(&qr, buf, version, ECC_LOW, payload);
 
   const int modules = qr.size;
@@ -41,7 +46,7 @@ static void drawQr(const char* payload, uint8_t version, int pxPer, int y) {
   const int qrX     = (240 - qrPx) / 2;
 
   s_tft.fillRect(qrX - pxPer, y - pxPer,
-                 qrPx + 2 * pxPer, qrPx + 2 * pxPer, 0xFFFF /* white */);
+                 qrPx + 2 * pxPer, qrPx + 2 * pxPer, 0xFFFF);
 
   for (int yy = 0; yy < modules; yy++) {
     for (int xx = 0; xx < modules; xx++) {
@@ -52,13 +57,18 @@ static void drawQr(const char* payload, uint8_t version, int pxPer, int y) {
   }
 }
 
+// Logo-Splash: 128x128 Bitmap zentriert auf 240x240
+static void drawLogo(const uint8_t* bmp, int w, int h, uint16_t color) {
+  clearScreen();
+  s_tft.drawBitmap((240 - w) / 2, (240 - h) / 2, bmp, w, h, color);
+}
+
 // ----- public API --------------------------------------------------------
 
 bool begin() {
   ledcAttach(TFT_BL, 5000, 8);
   ledcWrite(TFT_BL, TFT_BL_BRIGHTNESS);
 
-  // Hardware-SPI auf native FSPI-Pins (shared mit SD-Karte)
   SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS);
 
   s_tft.init(240, 240);
@@ -76,20 +86,131 @@ void showBoot() {
   drawCentered("Starting...", 130, COL_DIMMED, 2);
 }
 
+// Kurze Intro-Animation: konzentrische Rechtecke rein, dann raus
+static void introRectAnim() {
+  clearScreen();
+  for (int i = 0; i < 120; i += 6) {
+    s_tft.drawRect(i, i, 240 - 2 * i, 240 - 2 * i, COL_ACCENT);
+    delay(15);
+  }
+  delay(200);
+  clearScreen();
+}
+
+void showSplashSequence() {
+  introRectAnim();
+  drawLogo(eth_spagegeodesy_logo_bmp, ETHSPACEG_LOGO_WIDTH, ETHSPACEG_LOGO_HEIGHT, COL_TITLE);
+  delay(1200);
+  drawLogo(spagegeodesy_logo_bmp, SPACEG_LOGO_WIDTH, SPACEG_LOGO_HEIGHT, COL_TITLE);
+  delay(1200);
+  drawLogo(wolf_logo_bmp, WOLF_LOGO_WIDTH, WOLF_LOGO_HEIGHT, COL_ACCENT);
+  delay(1200);
+}
+
+// ======================================================================
+//  Einheitliches Layout fuer Boot- und Run-Bildschirme
+// ======================================================================
+//  Header: "AWARE <mode>" Titelzeile, horizontale Linie darunter.
+//  Zeilen: Label (links, size=2, DIMMED) + Wert (rechts ab VAL_X, size=2,
+//          auto-shrink auf size=1 wenn >14 Zeichen).
+//  Footer: DEVICE_NAME unten, DIMMED, size=1.
+
+static constexpr int TITLE_Y   = 6;
+static constexpr int HLINE_Y   = 28;
+static constexpr int VAL_X     = 60;
+static constexpr int VAL_W     = 240 - VAL_X - 4;
+static constexpr int ROW_H_BIG = 16;  // text size 2 height
+static constexpr int Y_ROW0    = 40;
+static constexpr int ROW_STEP  = 28;
+static constexpr int FOOTER_Y  = 226;
+
+static int rowY(int i) { return Y_ROW0 + i * ROW_STEP; }
+
+static void drawHeader(const char* title) {
+  s_tft.setTextSize(2);
+  s_tft.setTextColor(COL_ACCENT);
+  s_tft.setCursor(6, TITLE_Y);
+  s_tft.print("AWARE ");
+  s_tft.setTextColor(COL_TITLE);
+  s_tft.print(title);
+  s_tft.drawFastHLine(0, HLINE_Y, 240, COL_DIMMED);
+}
+
+static void drawFooter() {
+  drawCentered(DEVICE_NAME, FOOTER_Y, COL_DIMMED, 1);
+}
+
+static void drawLabel(int y, const char* text) {
+  s_tft.setTextSize(2);
+  s_tft.setTextColor(COL_DIMMED);
+  s_tft.setCursor(6, y);
+  s_tft.print(text);
+}
+
+// Wertfeld ueberzeichnen. Bei >14 Zeichen auto-shrink auf size=1.
+static void drawValue(int y, const char* text, uint16_t color) {
+  s_tft.fillRect(VAL_X, y, VAL_W, ROW_H_BIG, COL_BG);
+  uint8_t size = (strlen(text) > 14) ? 1 : 2;
+  s_tft.setTextSize(size);
+  s_tft.setTextColor(color);
+  s_tft.setCursor(VAL_X, size == 1 ? y + 4 : y);
+  s_tft.print(text);
+}
+
+// ----- Boot-Screens -------------------------------------------------------
+
 void showSdInit(bool ok, float sizeMB) {
   clearScreen();
-  drawCentered("SD Karte", 60, COL_ACCENT, 3);
+  drawHeader("BOOT");
+  drawLabel(rowY(0), "SD");
   if (ok) {
-    drawCentered("OK", 110, COL_SUCCESS, 4);
     char buf[24];
-    if (sizeMB >= 1024.0f) snprintf(buf, sizeof(buf), "%.1f GB", sizeMB / 1024.0f);
-    else                   snprintf(buf, sizeof(buf), "%.0f MB", sizeMB);
-    drawCentered(buf, 165, COL_TEXT, 2);
+    if (sizeMB >= 1024.0f) snprintf(buf, sizeof(buf), "%.1fGB", sizeMB / 1024.0f);
+    else                   snprintf(buf, sizeof(buf), "%.0fMB OK", sizeMB);
+    drawValue(rowY(0), buf, COL_SUCCESS);
   } else {
-    drawCentered("Keine Karte", 120, COL_ERROR, 2);
-    drawCentered("erkannt", 150, COL_ERROR, 2);
+    drawValue(rowY(0), "keine Karte", COL_ERROR);
   }
+  drawFooter();
 }
+
+// --- GNSS Init Progress Screen (gleiches Raster) -------------------------
+
+static GnssStatus s_gnssLineStatus[3] = {
+  GnssStatus::PENDING, GnssStatus::PENDING, GnssStatus::PENDING
+};
+
+static void drawGnssInitScreen() {
+  clearScreen();
+  drawHeader("GNSS");
+
+  const char* labels[3] = { "I2C", "Modul", "Config" };
+  for (int i = 0; i < 3; i++) {
+    drawLabel(rowY(i), labels[i]);
+
+    const char* badge;
+    uint16_t    col;
+    switch (s_gnssLineStatus[i]) {
+      case GnssStatus::OK:   badge = "OK";   col = COL_SUCCESS; break;
+      case GnssStatus::FAIL: badge = "FAIL"; col = COL_ERROR;   break;
+      default:               badge = "...";  col = COL_DIMMED;  break;
+    }
+    drawValue(rowY(i), badge, col);
+  }
+  drawFooter();
+}
+
+void showGnssInitReset() {
+  for (int i = 0; i < 3; i++) s_gnssLineStatus[i] = GnssStatus::PENDING;
+  drawGnssInitScreen();
+}
+
+void showGnssInitUpdate(GnssLine line, GnssStatus st) {
+  s_gnssLineStatus[(uint8_t)line] = st;
+  drawGnssInitScreen();
+}
+
+// --- Provisioning screens -------------------------------------------------
 
 void showProvisioningAP(const String& apName, const String& password) {
   clearScreen();
@@ -98,7 +219,7 @@ void showProvisioningAP(const String& apName, const String& password) {
   drawCentered("at the code",       46, COL_TEXT, 2);
 
   String payload = "WIFI:T:WPA;S:" + apName + ";P:" + password + ";;";
-  drawQr(payload.c_str(), /*version*/ 4, /*pxPer*/ 5, /*y*/ 68);
+  drawQr(payload.c_str(), 4, 5, 68);
 }
 
 void showProvisioningUrl(const String& url) {
@@ -106,7 +227,7 @@ void showProvisioningUrl(const String& url) {
   drawCentered("Almost done",       2,  COL_SUCCESS, 2);
   drawCentered("Scan again to pick", 26, COL_TEXT, 2);
   drawCentered("your home WiFi",    46, COL_TEXT, 2);
-  drawQr(url.c_str(), /*version*/ 3, /*pxPer*/ 5, /*y*/ 78);
+  drawQr(url.c_str(), 3, 5, 78);
 }
 
 void showTransitionLookAtDevice() {
@@ -181,6 +302,114 @@ void showFactoryReset() {
   drawCentered("Neustart...",160, COL_DIMMED, 2);
 }
 
+// --- Normal Operation: Live-Status ---------------------------------------
+
+static const char* roleShort(Role r) {
+  switch (r) {
+    case ROLE_IOT_LOGGER_SD:  return "LOG-SD";
+    case ROLE_BASE_NTRIP:     return "BASE";
+    case ROLE_ROVER_NTRIP:    return "ROVER";
+    case ROLE_IOT_LOGGER_TCP: return "LOG-TCP";
+  }
+  return "?";
+}
+
+// Live-Status: statischer Teil (Header + Labels + Footer) nur einmal zeichnen,
+// nur Wertfelder bei 1-Hz-Refresh ueberzeichnen -> kein Flackern.
+static bool s_normalStaticDrawn = false;
+
+static void drawNormalStatic() {
+  clearScreen();
+  drawHeader(roleShort(g_role));
+  drawLabel(rowY(0), "UTC");
+  drawLabel(rowY(1), "GNSS");
+  drawLabel(rowY(2), "SD");
+  drawLabel(rowY(3), "WiFi");
+  drawLabel(rowY(4), (g_role == ROLE_BASE_NTRIP || g_role == ROLE_ROVER_NTRIP)
+                       ? "NTRIP" : "Role");
+  drawFooter();
+}
+
+static void drawNormalDynamic() {
+  char line[48];
+
+  // Zeit (+ Datum als kleine 2. Zeile unter UTC-Value)
+  if (Gnss::timeValid()) {
+    snprintf(line, sizeof(line), "%02u:%02u:%02u",
+             Gnss::hour(), Gnss::minute(), Gnss::second());
+    drawValue(rowY(0), line, COL_TEXT);
+  } else {
+    drawValue(rowY(0), "warte...", COL_WARN);
+  }
+  const int yDate = rowY(0) + ROW_H_BIG + 1;
+  s_tft.fillRect(VAL_X, yDate, VAL_W, 10, COL_BG);
+  if (Gnss::dateValid()) {
+    snprintf(line, sizeof(line), "%04u-%02u-%02u",
+             Gnss::year(), Gnss::month(), Gnss::day());
+    s_tft.setTextSize(1);
+    s_tft.setTextColor(COL_DIMMED);
+    s_tft.setCursor(VAL_X, yDate);
+    s_tft.print(line);
+  }
+
+  // GNSS Fix + SIV
+  uint8_t fix = Gnss::fixType();
+  if (fix >= 2) {
+    snprintf(line, sizeof(line), "F%u SIV %u", fix, Gnss::siv());
+    drawValue(rowY(1), line, COL_SUCCESS);
+  } else {
+    snprintf(line, sizeof(line), "no fix %u", Gnss::siv());
+    drawValue(rowY(1), line, COL_WARN);
+  }
+
+  // SD
+  if (SdStorage::isMounted()) {
+    float mb = SdStorage::sizeMB();
+    if (mb >= 1024.0f) snprintf(line, sizeof(line), "%.1fGB", mb / 1024.0f);
+    else               snprintf(line, sizeof(line), "%.0fMB", mb);
+    drawValue(rowY(2), line, COL_SUCCESS);
+  } else {
+    drawValue(rowY(2), "n/a", COL_ERROR);
+  }
+
+  // WiFi (IP)
+  if (WifiProv::isConnected()) {
+    drawValue(rowY(3), WifiProv::staIp(), COL_SUCCESS);
+  } else {
+    drawValue(rowY(3), "reconnect", COL_WARN);
+  }
+
+  // NTRIP / Role
+  if (g_role == ROLE_BASE_NTRIP || g_role == ROLE_ROVER_NTRIP) {
+    if (Ntrip::isStreaming()) {
+      uint32_t kb = Ntrip::bytesTransferred() / 1024;
+      snprintf(line, sizeof(line), "%luKB", (unsigned long)kb);
+      drawValue(rowY(4), line, COL_SUCCESS);
+    } else {
+      drawValue(rowY(4), "warte", COL_WARN);
+    }
+  } else {
+    drawValue(rowY(4), roleShort(g_role), COL_TEXT);
+  }
+
+  // SSID-Zeile unter Row4 (klein, DIMMED)
+  const int ySsid = rowY(4) + ROW_H_BIG + 6;
+  s_tft.fillRect(0, ySsid, 240, 10, COL_BG);
+  s_tft.setTextSize(1);
+  s_tft.setTextColor(COL_DIMMED);
+  s_tft.setCursor(6, ySsid);
+  s_tft.print("SSID: ");
+  s_tft.print(WifiProv::staSsid());
+}
+
+void showNormalOperation() {
+  if (!s_normalStaticDrawn) {
+    drawNormalStatic();
+    s_normalStaticDrawn = true;
+  }
+  drawNormalDynamic();
+}
+
 void pulseBacklight(int pulses) {
   for (int i = 0; i < pulses; i++) {
     ledcWrite(TFT_BL, 255);
@@ -193,52 +422,42 @@ void pulseBacklight(int pulses) {
 // ----- Task ---------------------------------------------------------------
 
 static void render(AppState s) {
+  if (s != STATE_NORMAL_OPERATION) s_normalStaticDrawn = false;
   switch (s) {
-    case STATE_BOOT:
-      showBoot();
-      break;
-    case STATE_SD_INIT:
-      showSdInit(SdStorage::isMounted(), SdStorage::sizeMB());
-      break;
-    case STATE_PROV_AP:
-      showProvisioningAP(WifiProv::apSsid(), WifiProv::apPassword());
-      break;
-    case STATE_PROV_URL:
-      showProvisioningUrl(WifiProv::portalUrl());
-      break;
-    case STATE_PROV_TRANSITION:
-      showTransitionLookAtDevice();
-      break;
+    case STATE_BOOT:              showBoot(); break;
+    case STATE_SD_INIT:           showSdInit(SdStorage::isMounted(), SdStorage::sizeMB()); break;
+    case STATE_PROV_AP:           showProvisioningAP(WifiProv::apSsid(), WifiProv::apPassword()); break;
+    case STATE_PROV_URL:          showProvisioningUrl(WifiProv::portalUrl()); break;
+    case STATE_PROV_TRANSITION:   showTransitionLookAtDevice(); break;
     case STATE_CONNECTING:
-    case STATE_CONNECTING_SAVED:
-      showConnecting(WifiProv::staSsid());
-      break;
-    case STATE_CONNECTED:
-    case STATE_NORMAL_OPERATION:
-      showConnected(WifiProv::staSsid(), WifiProv::staIp());
-      break;
-    case STATE_CONNECTION_FAILED:
-      showConnectionFailed(WifiProv::lastFailReason());
-      break;
-    case STATE_RECONNECTING:
-      showReconnecting(WifiProv::reconnectAttempt(), WifiProv::reconnectMax());
-      break;
-    case STATE_FACTORY_RESET:
-      showFactoryReset();
-      break;
-    default:
-      break;
+    case STATE_CONNECTING_SAVED:  showConnecting(WifiProv::staSsid()); break;
+    case STATE_CONNECTED:         showConnected(WifiProv::staSsid(), WifiProv::staIp()); break;
+    case STATE_NORMAL_OPERATION:  showNormalOperation(); break;
+    case STATE_CONNECTION_FAILED: showConnectionFailed(WifiProv::lastFailReason()); break;
+    case STATE_RECONNECTING:      showReconnecting(WifiProv::reconnectAttempt(), WifiProv::reconnectMax()); break;
+    case STATE_FACTORY_RESET:     showFactoryReset(); break;
+    default: break;
   }
 }
 
 void task(void*) {
-  showBoot();
   AppEvent evt;
+  AppState lastRendered = (AppState)g_state;
+  uint32_t lastRefreshMs = 0;
+
   for (;;) {
     if (xQueueReceive(g_displayQueue, &evt, pdMS_TO_TICKS(200)) == pdTRUE) {
       if (evt.type == EVT_STATE_CHANGED) {
-        render((AppState)evt.payload);
+        lastRendered = (AppState)evt.payload;
+        render(lastRendered);
+        lastRefreshMs = millis();
       }
+    }
+    // Live-Refresh im Normal-Operation-Screen (1 Hz)
+    if (lastRendered == STATE_NORMAL_OPERATION &&
+        millis() - lastRefreshMs > 1000) {
+      showNormalOperation();
+      lastRefreshMs = millis();
     }
   }
 }

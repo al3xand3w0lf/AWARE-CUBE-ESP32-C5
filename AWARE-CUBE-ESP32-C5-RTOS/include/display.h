@@ -24,7 +24,15 @@ namespace Display {
 
   // Low-level Screens
   void showBoot();
+  void showSplashSequence();              // blockierend ~4 s: Fill-Anim + 3 Logos
   void showSdInit(bool ok, float sizeMB);
+
+  // GNSS-Init-Fortschritt (synchron im setup()-Flow)
+  enum class GnssLine : uint8_t { I2C, DETECT, CONFIG };
+  enum class GnssStatus : uint8_t { PENDING, OK, FAIL };
+  void showGnssInitReset();                               // alle Zeilen auf PENDING
+  void showGnssInitUpdate(GnssLine line, GnssStatus st);  // eine Zeile + Redraw
+
   void showProvisioningAP(const String& apName, const String& password);
   void showProvisioningUrl(const String& url);
   void showTransitionLookAtDevice();
@@ -33,8 +41,9 @@ namespace Display {
   void showConnectionFailed(ConnectFail reason);
   void showReconnecting(int attempt, int maxAttempts);
   void showFactoryReset();
+  void showNormalOperation();             // Live-Status (Refresh 1 Hz im Task)
 
-  void pulseBacklight(int pulses = 3);    // blockierend ~pulses*300ms
+  void pulseBacklight(int pulses = 3);
 }
 
 #endif // DISPLAY_H

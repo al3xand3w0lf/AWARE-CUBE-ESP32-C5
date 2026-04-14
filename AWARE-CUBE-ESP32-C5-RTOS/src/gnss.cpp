@@ -29,6 +29,12 @@ static volatile int32_t  s_lon       = 0;
 static volatile int32_t  s_alt       = 0;
 static volatile bool     s_timeValid = false;
 static volatile bool     s_dateValid = false;
+static volatile uint16_t s_year      = 0;
+static volatile uint8_t  s_month     = 0;
+static volatile uint8_t  s_day       = 0;
+static volatile uint8_t  s_hour      = 0;
+static volatile uint8_t  s_min       = 0;
+static volatile uint8_t  s_sec       = 0;
 
 static uint32_t s_lastDataMs   = 0;
 static uint8_t  s_reinitCount  = 0;
@@ -137,22 +143,25 @@ static bool applyRoleConfig() {
   return true;
 }
 
-bool begin() {
+bool begin(InitProgressCb cb) {
   s_role = WifiProv::role();
 
   Wire.begin(GNSS_I2C_SDA, GNSS_I2C_SCL);
   Wire.setClock(GNSS_I2C_HZ);
+  if (cb) cb(InitStep::I2C_UP);
 
-  // Nicht blockierend: wenn der F9P noch nicht da ist, versucht der Task
-  // spaeter erneut (Stall-Recovery).
   if (!s_gnss.begin(Wire, GNSS_I2C_ADDR)) {
     DBG_PRINTLN("[GNSS] begin() failed — will retry in task");
+    if (cb) cb(InitStep::DETECT_FAIL);
     return false;
   }
   DBG_PRINTLN("[GNSS] module detected");
-  applyRoleConfig();
+  if (cb) cb(InitStep::DETECT_OK);
+
+  bool ok = applyRoleConfig();
+  if (cb) cb(ok ? InitStep::CONFIG_OK : InitStep::CONFIG_FAIL);
   s_lastDataMs = millis();
-  return true;
+  return ok;
 }
 
 // ------------------------------------------------------------------- getters
@@ -165,6 +174,12 @@ int32_t  lonDeg7()    { return s_lon; }
 int32_t  altMm()      { return s_alt; }
 bool     timeValid() { return s_timeValid; }
 bool     dateValid() { return s_dateValid; }
+uint16_t year()      { return s_year; }
+uint8_t  month()     { return s_month; }
+uint8_t  day()       { return s_day; }
+uint8_t  hour()      { return s_hour; }
+uint8_t  minute()    { return s_min; }
+uint8_t  second()    { return s_sec; }
 
 // ------------------------------------------------------------------- task
 
@@ -173,6 +188,12 @@ static void pollLiveStatus() {
   s_fixType   = s_gnss.getFixType();
   s_timeValid = s_gnss.getTimeValid();
   s_dateValid = s_gnss.getDateValid();
+  s_year      = s_gnss.getYear();
+  s_month     = s_gnss.getMonth();
+  s_day       = s_gnss.getDay();
+  s_hour      = s_gnss.getHour();
+  s_min       = s_gnss.getMinute();
+  s_sec       = s_gnss.getSecond();
   if (s_fixType >= 2) {
     s_lat      = s_gnss.getLatitude();
     s_lon      = s_gnss.getLongitude();

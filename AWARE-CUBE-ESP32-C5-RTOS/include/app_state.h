@@ -10,7 +10,9 @@
 
 enum AppState : uint8_t {
   STATE_BOOT = 0,
+  STATE_SPLASH,                  // Logo-Sequenz (synchron in setup())
   STATE_SD_INIT,                 // SD-Mount-Status (3 s Einblendung)
+  STATE_GNSS_INIT,               // u-blox F9P Detect + Config (synchron)
   STATE_CHECK_NVS,
   STATE_PROV_AP,                 // QR1: AP-Credentials
   STATE_PROV_URL,                // QR2: Portal-URL (Client ist auf AP)

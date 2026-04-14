@@ -35,10 +35,38 @@ void setup() {
 
   // Display zuerst: SPI wird hier aufgesetzt. SD nutzt denselben Bus.
   if (!Display::begin())   DBG_PRINTLN("# display init FAILED");
-  if (!SdStorage::begin()) DBG_PRINTLN("# sd init FAILED (optional)");
+
+  // 1) Splash-Sequenz (Intro + 3 Logos) — synchron, vor WDT-Aktivierung
+  Display::showSplashSequence();
+
+  // 2) Boot-Label
+  Display::showBoot();
+
+  // 3) SD-Karte mounten und Ergebnis zeigen
+  bool sdOk = SdStorage::begin();
+  if (!sdOk) DBG_PRINTLN("# sd init FAILED (optional)");
+  Display::showSdInit(sdOk, SdStorage::sizeMB());
+  delay(1500);
+
   if (!Button::begin())    DBG_PRINTLN("# button init FAILED");
   if (!WifiProv::begin())  DBG_PRINTLN("# wifi init FAILED");
-  if (!Gnss::begin())      DBG_PRINTLN("# gnss init FAILED (will retry in task)");
+
+  // 4) GNSS-Init mit Fortschrittsanzeige
+  Display::showGnssInitReset();
+  bool gnssOk = Gnss::begin([](Gnss::InitStep st) {
+    using GL = Display::GnssLine;
+    using GS = Display::GnssStatus;
+    switch (st) {
+      case Gnss::InitStep::I2C_UP:      Display::showGnssInitUpdate(GL::I2C,    GS::OK);   break;
+      case Gnss::InitStep::DETECT_OK:   Display::showGnssInitUpdate(GL::DETECT, GS::OK);   break;
+      case Gnss::InitStep::DETECT_FAIL: Display::showGnssInitUpdate(GL::DETECT, GS::FAIL); break;
+      case Gnss::InitStep::CONFIG_OK:   Display::showGnssInitUpdate(GL::CONFIG, GS::OK);   break;
+      case Gnss::InitStep::CONFIG_FAIL: Display::showGnssInitUpdate(GL::CONFIG, GS::FAIL); break;
+    }
+  });
+  if (!gnssOk) DBG_PRINTLN("# gnss init FAILED (will retry in task)");
+  delay(1500);
+
   Ntrip::begin();
   TcpStream::begin();
   Uploader::begin();

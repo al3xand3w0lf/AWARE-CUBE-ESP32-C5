@@ -68,6 +68,33 @@ asserts.
 Watchdog `WDT_TIMEOUT_S=30`. WiFi scan blocks up to 10 s → don't lower.
 GNSS, NTRIP, TCP and uploader tasks call `esp_task_wdt_add/reset`.
 
+## Boot-Sequenz / Display-Layout
+
+`main.cpp::setup()` zeichnet vor dem Start der Tasks synchron:
+
+1. `Display::showSplashSequence()` — Intro-Animation + 3 Logos
+   (ETH-SpaceGeodesy, SpaceGeodesy, Wolf; Bitmaps in `include/*_logo.h`).
+2. `Display::showBoot()` — Device-Name.
+3. SD-Mount → `Display::showSdInit(ok, sizeMB)`.
+4. `Display::showGnssInitReset()` → `Gnss::begin(cb)`: Callback meldet
+   `InitStep::{I2C_UP, DETECT_OK/FAIL, CONFIG_OK/FAIL}`; Display zeichnet
+   3-Zeilen-Fortschritt (I2C / Modul / Config) mit OK/FAIL-Badge.
+
+Ab da uebernimmt `Display::task` state-driven Rendering via
+`g_displayQueue`. Im `STATE_NORMAL_OPERATION` refresht der Task **nur die
+Wertfelder** im 1-Hz-Takt (Header/Labels bleiben stehen → kein Flackern);
+Flag `s_normalStaticDrawn` wird beim State-Wechsel zurueckgesetzt.
+
+**Einheitliches Raster** (SD-Init, GNSS-Init, Normal-Operation) via
+Helpers in `display.cpp`:
+
+- `drawHeader("AWARE <mode>")` — Titelzeile size=2 + hline bei y=28
+- `drawLabel(y, text)` — linke Spalte, size=2, DIMMED, x=6
+- `drawValue(y, text, color)` — rechte Spalte ab `VAL_X=60`, size=2,
+  auto-shrink auf size=1 bei `strlen>14` (IPs/lange SSIDs)
+- `drawFooter()` — `DEVICE_NAME` zentriert unten, size=1
+- Zeilen-Y via `rowY(i)` (Y_ROW0=40, ROW_STEP=28)
+
 ## Hardware (do not change without discussion)
 
 - **Shared SPI** (SCK=6, MOSI=7, MISO=2) — ST7789 + SD. `SPI.begin()` in

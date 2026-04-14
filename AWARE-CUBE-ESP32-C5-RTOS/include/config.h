@@ -58,7 +58,7 @@
 // --- GNSS u-blox F9P (separater I2C-Bus Wire1) ---
 #define GNSS_I2C_SDA       5
 #define GNSS_I2C_SCL       4
-#define GNSS_I2C_HZ   400000     // Fast-Mode
+#define GNSS_I2C_HZ   100000     // Fast-Mode
 #define GNSS_I2C_ADDR    0x42
 
 // --- Stream-Buffer-Groessen (Byte) ---
