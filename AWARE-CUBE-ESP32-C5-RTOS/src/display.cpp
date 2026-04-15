@@ -13,12 +13,35 @@
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
+#include <U8g2_for_Adafruit_GFX.h>
 #include <SPI.h>
 #include <qrcode.h>
 
 namespace Display {
 
-static Adafruit_ST7789 s_tft(TFT_CS, TFT_DC, TFT_RST);
+static Adafruit_ST7789       s_tft(TFT_CS, TFT_DC, TFT_RST);
+static U8G2_FOR_ADAFRUIT_GFX u8f;
+
+// Schriftarten — klassische bdf-Bitmap-Fonts (Retro-Terminal/Pixel-Look)
+// S1  : Footer, Sub-Zeilen (Datum, SSID)
+// S2  : Labels und Wert-Felder
+// S2B : fett — Header-Titel
+// S3  : grosse Status-Meldungen ("Verbunden!", "Fehler!")
+// S4  : Boot-Titel (DEVICE_NAME)
+#define FONT_S1  u8g2_font_6x10_tf
+#define FONT_S2  u8g2_font_8x13_tf
+#define FONT_S2B u8g2_font_8x13B_tf
+#define FONT_S3  u8g2_font_9x15B_tf
+#define FONT_S4  u8g2_font_10x20_tf
+
+// Hilfsfunktion: y = obere Textkante (Adafruit-Konvention).
+// u8g2 erwartet die Baseline -> Offset = getFontAscent().
+static void u8text(const uint8_t* font, uint16_t color, int x, int y, const char* text) {
+  u8f.setFont(font);
+  u8f.setForegroundColor(color);
+  u8f.setCursor(x, y + u8f.getFontAscent());
+  u8f.print(text);
+}
 
 // ----- low-level helpers -------------------------------------------------
 
@@ -27,13 +50,18 @@ static void clearScreen() {
 }
 
 static void drawCentered(const char* text, int y, uint16_t color, uint8_t size) {
-  s_tft.setTextSize(size);
-  s_tft.setTextColor(color);
-  int16_t x1, y1;
-  uint16_t w, h;
-  s_tft.getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
-  s_tft.setCursor((240 - w) / 2, y);
-  s_tft.print(text);
+  const uint8_t* font;
+  switch (size) {
+    case 1:  font = FONT_S1;  break;
+    case 2:  font = FONT_S2;  break;
+    case 3:  font = FONT_S3;  break;
+    default: font = FONT_S4;  break;
+  }
+  u8f.setFont(font);
+  u8f.setForegroundColor(color);
+  uint16_t w = u8f.getUTF8Width(text);
+  u8f.setCursor((240 - (int)w) / 2, y + u8f.getFontAscent());
+  u8f.print(text);
 }
 
 static void drawQr(const char* payload, uint8_t version, int pxPer, int y) {
@@ -76,6 +104,9 @@ bool begin() {
   s_tft.setRotation(0);
   clearScreen();
 
+  u8f.begin(s_tft);
+  u8f.setFontMode(1);   // transparent: Hintergrundpixel werden nicht ueberschrieben
+
   DBG_PRINTLN("[Display] Initialisiert (240x240 ST7789)");
   return true;
 }
@@ -111,15 +142,15 @@ void showSplashSequence() {
 //  Einheitliches Layout fuer Boot- und Run-Bildschirme
 // ======================================================================
 //  Header: "AWARE <mode>" Titelzeile, horizontale Linie darunter.
-//  Zeilen: Label (links, size=2, DIMMED) + Wert (rechts ab VAL_X, size=2,
-//          auto-shrink auf size=1 wenn >14 Zeichen).
-//  Footer: DEVICE_NAME unten, DIMMED, size=1.
+//  Zeilen: Label (links, FONT_S2, DIMMED) + Wert (rechts ab VAL_X,
+//          auto-shrink auf FONT_S1 wenn >22 Zeichen).
+//  Footer: DEVICE_NAME unten, DIMMED, FONT_S1.
 
 static constexpr int TITLE_Y   = 6;
 static constexpr int HLINE_Y   = 28;
 static constexpr int VAL_X     = 60;
 static constexpr int VAL_W     = 240 - VAL_X - 4;
-static constexpr int ROW_H_BIG = 16;  // text size 2 height
+static constexpr int ROW_H_BIG = 13;   // Hoehe von FONT_S2 (8x13)
 static constexpr int Y_ROW0    = 40;
 static constexpr int ROW_STEP  = 28;
 static constexpr int FOOTER_Y  = 226;
@@ -127,12 +158,12 @@ static constexpr int FOOTER_Y  = 226;
 static int rowY(int i) { return Y_ROW0 + i * ROW_STEP; }
 
 static void drawHeader(const char* title) {
-  s_tft.setTextSize(2);
-  s_tft.setTextColor(COL_ACCENT);
-  s_tft.setCursor(6, TITLE_Y);
-  s_tft.print("AWARE ");
-  s_tft.setTextColor(COL_TITLE);
-  s_tft.print(title);
+  u8f.setFont(FONT_S2B);
+  u8f.setForegroundColor(COL_ACCENT);
+  u8f.setCursor(6, TITLE_Y + u8f.getFontAscent());
+  u8f.print("AWARE ");
+  u8f.setForegroundColor(COL_TITLE);
+  u8f.print(title);
   s_tft.drawFastHLine(0, HLINE_Y, 240, COL_DIMMED);
 }
 
@@ -141,20 +172,14 @@ static void drawFooter() {
 }
 
 static void drawLabel(int y, const char* text) {
-  s_tft.setTextSize(2);
-  s_tft.setTextColor(COL_DIMMED);
-  s_tft.setCursor(6, y);
-  s_tft.print(text);
+  u8text(FONT_S2, COL_DIMMED, 6, y, text);
 }
 
-// Wertfeld ueberzeichnen. Bei >14 Zeichen auto-shrink auf size=1.
+// Wertfeld ueberzeichnen. Bei >22 Zeichen auto-shrink auf FONT_S1.
 static void drawValue(int y, const char* text, uint16_t color) {
   s_tft.fillRect(VAL_X, y, VAL_W, ROW_H_BIG, COL_BG);
-  uint8_t size = (strlen(text) > 14) ? 1 : 2;
-  s_tft.setTextSize(size);
-  s_tft.setTextColor(color);
-  s_tft.setCursor(VAL_X, size == 1 ? y + 4 : y);
-  s_tft.print(text);
+  const uint8_t* font = (strlen(text) > 22) ? FONT_S1 : FONT_S2;
+  u8text(font, color, VAL_X, y, text);
 }
 
 // ----- Boot-Screens -------------------------------------------------------
@@ -214,9 +239,9 @@ void showGnssInitUpdate(GnssLine line, GnssStatus st) {
 
 void showProvisioningAP(const String& apName, const String& password) {
   clearScreen();
-  drawCentered("Connect to WiFi", 2,  COL_ACCENT, 2);
-  drawCentered("Point your camera", 26, COL_TEXT, 2);
-  drawCentered("at the code",       46, COL_TEXT, 2);
+  drawCentered("Connect to WiFi",   2,  COL_ACCENT, 2);
+  drawCentered("Point your camera", 26, COL_TEXT,   2);
+  drawCentered("at the code",       46, COL_TEXT,   2);
 
   String payload = "WIFI:T:WPA;S:" + apName + ";P:" + password + ";;";
   drawQr(payload.c_str(), 4, 5, 68);
@@ -224,29 +249,28 @@ void showProvisioningAP(const String& apName, const String& password) {
 
 void showProvisioningUrl(const String& url) {
   clearScreen();
-  drawCentered("Almost done",       2,  COL_SUCCESS, 2);
-  drawCentered("Scan again to pick", 26, COL_TEXT, 2);
-  drawCentered("your home WiFi",    46, COL_TEXT, 2);
+  drawCentered("Almost done",        2,  COL_SUCCESS, 2);
+  drawCentered("Scan again to pick", 26, COL_TEXT,    2);
+  drawCentered("your home WiFi",     46, COL_TEXT,    2);
   drawQr(url.c_str(), 3, 5, 78);
 }
 
 void showTransitionLookAtDevice() {
   clearScreen();
   drawCentered("Connected!",    50,  COL_SUCCESS, 3);
-  drawCentered("Press button", 120, COL_ACCENT, 2);
-  drawCentered("for next step",148, COL_ACCENT, 2);
+  drawCentered("Press button",  120, COL_ACCENT,  2);
+  drawCentered("for next step", 148, COL_ACCENT,  2);
 }
 
 void showConnecting(const String& ssid) {
   clearScreen();
   drawCentered("Verbinde...", 60, COL_WARN, 2);
 
-  s_tft.setTextColor(COL_TITLE);
-  s_tft.setTextSize(2);
-  int16_t x1, y1; uint16_t w, h;
-  s_tft.getTextBounds(ssid.c_str(), 0, 0, &x1, &y1, &w, &h);
-  s_tft.setCursor((240 - w) / 2, 100);
-  s_tft.print(ssid);
+  u8f.setFont(FONT_S2);
+  u8f.setForegroundColor(COL_TITLE);
+  uint16_t w = u8f.getUTF8Width(ssid.c_str());
+  u8f.setCursor((240 - (int)w) / 2, 100 + u8f.getFontAscent());
+  u8f.print(ssid.c_str());
 
   drawCentered("Bitte warten", 150, COL_DIMMED, 1);
 }
@@ -256,17 +280,10 @@ void showConnected(const String& ssid, const String& ip) {
   drawCentered("Verbunden!", 40, COL_SUCCESS, 3);
   s_tft.drawFastHLine(20, 72, 200, COL_DIMMED);
 
-  s_tft.setTextColor(COL_TEXT); s_tft.setTextSize(1);
-  s_tft.setCursor(10, 90);  s_tft.print("WLAN:");
-
-  s_tft.setTextColor(COL_TITLE); s_tft.setTextSize(2);
-  s_tft.setCursor(10, 106); s_tft.print(ssid);
-
-  s_tft.setTextColor(COL_TEXT); s_tft.setTextSize(1);
-  s_tft.setCursor(10, 136); s_tft.print("IP-Adresse:");
-
-  s_tft.setTextColor(COL_ACCENT); s_tft.setTextSize(2);
-  s_tft.setCursor(10, 152); s_tft.print(ip);
+  u8text(FONT_S1, COL_TEXT,   10, 90,  "WLAN:");
+  u8text(FONT_S2, COL_TITLE,  10, 106, ssid.c_str());
+  u8text(FONT_S1, COL_TEXT,   10, 136, "IP-Adresse:");
+  u8text(FONT_S2, COL_ACCENT, 10, 152, ip.c_str());
 
   drawCentered(DEVICE_NAME, 220, COL_DIMMED, 1);
 }
@@ -275,12 +292,13 @@ void showConnectionFailed(ConnectFail reason) {
   clearScreen();
   drawCentered("Fehler!", 50, COL_ERROR, 3);
 
-  s_tft.setTextColor(COL_TEXT); s_tft.setTextSize(1);
-  s_tft.setCursor(10, 100);
+  u8f.setFont(FONT_S1);
+  u8f.setForegroundColor(COL_TEXT);
+  u8f.setCursor(10, 100 + u8f.getFontAscent());
   switch (reason) {
-    case FAIL_WRONG_PASSWORD: s_tft.print("Falsches Passwort."); break;
-    case FAIL_TIMEOUT:        s_tft.print("Netzwerk nicht erreichbar."); break;
-    default:                  s_tft.print("Verbindung fehlgeschlagen.");
+    case FAIL_WRONG_PASSWORD: u8f.print("Falsches Passwort.");        break;
+    case FAIL_TIMEOUT:        u8f.print("Netzwerk nicht erreichbar."); break;
+    default:                  u8f.print("Verbindung fehlgeschlagen.");
   }
   drawCentered("Erneut versuchen", 140, COL_WARN, 2);
   drawCentered("im Browser",       165, COL_WARN, 2);
@@ -297,9 +315,9 @@ void showReconnecting(int attempt, int maxAttempts) {
 
 void showFactoryReset() {
   clearScreen();
-  drawCentered("Factory",    70,  COL_ERROR, 3);
-  drawCentered("Reset",     105,  COL_ERROR, 3);
-  drawCentered("Neustart...",160, COL_DIMMED, 2);
+  drawCentered("Factory",     70,  COL_ERROR,  3);
+  drawCentered("Reset",      105,  COL_ERROR,  3);
+  drawCentered("Neustart...", 160, COL_DIMMED, 2);
 }
 
 // --- Normal Operation: Live-Status ---------------------------------------
@@ -314,7 +332,7 @@ static const char* roleShort(Role r) {
   return "?";
 }
 
-// Live-Status: statischer Teil (Header + Labels + Footer) nur einmal zeichnen,
+// Statischer Teil (Header + Labels + Footer) nur einmal zeichnen,
 // nur Wertfelder bei 1-Hz-Refresh ueberzeichnen -> kein Flackern.
 static bool s_normalStaticDrawn = false;
 
@@ -333,7 +351,7 @@ static void drawNormalStatic() {
 static void drawNormalDynamic() {
   char line[48];
 
-  // Zeit (+ Datum als kleine 2. Zeile unter UTC-Value)
+  // Zeit (+ Datum als kleine Sub-Zeile)
   if (Gnss::timeValid()) {
     snprintf(line, sizeof(line), "%02u:%02u:%02u",
              Gnss::hour(), Gnss::minute(), Gnss::second());
@@ -346,10 +364,7 @@ static void drawNormalDynamic() {
   if (Gnss::dateValid()) {
     snprintf(line, sizeof(line), "%04u-%02u-%02u",
              Gnss::year(), Gnss::month(), Gnss::day());
-    s_tft.setTextSize(1);
-    s_tft.setTextColor(COL_DIMMED);
-    s_tft.setCursor(VAL_X, yDate);
-    s_tft.print(line);
+    u8text(FONT_S1, COL_DIMMED, VAL_X, yDate, line);
   }
 
   // GNSS Fix + SIV
@@ -395,11 +410,11 @@ static void drawNormalDynamic() {
   // SSID-Zeile unter Row4 (klein, DIMMED)
   const int ySsid = rowY(4) + ROW_H_BIG + 6;
   s_tft.fillRect(0, ySsid, 240, 10, COL_BG);
-  s_tft.setTextSize(1);
-  s_tft.setTextColor(COL_DIMMED);
-  s_tft.setCursor(6, ySsid);
-  s_tft.print("SSID: ");
-  s_tft.print(WifiProv::staSsid());
+  u8f.setFont(FONT_S1);
+  u8f.setForegroundColor(COL_DIMMED);
+  u8f.setCursor(6, ySsid + u8f.getFontAscent());
+  u8f.print("SSID: ");
+  u8f.print(WifiProv::staSsid());
 }
 
 void showNormalOperation() {
